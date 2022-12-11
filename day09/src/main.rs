@@ -704,7 +704,11 @@
 
 fn main() {
     let input = std::fs::read_to_string("../input/day09.txt").unwrap();
-    let part_one = simulate_rope(input.split("\n"));
+    let input = input.split("\n");
+    let part_one = simulate_rope(input.clone(), 2);
+    println!("Part one: {part_one}");
+
+    let part_one = simulate_rope(input, 10);
     println!("Part one: {part_one}");
 }
 
@@ -714,10 +718,24 @@ mod tests {
     use crate::simulate_rope;
 
     #[test]
-    fn example_case() {
+    fn example_case_part_one() {
         let input = vec!["R 4", "U 4", "L 3", "D 1", "R 4", "D 1", "L 5", "R 2"];
-        let num_pos = simulate_rope(input.into_iter());
+        let num_pos = simulate_rope(input.into_iter(), 2);
         assert_eq!(num_pos, 13);
+    }
+
+    #[test]
+    fn example_case_part_two_a() {
+        let input = vec!["R 4", "U 4", "L 3", "D 1", "R 4", "D 1", "L 5", "R 2"];
+        let num_pos = simulate_rope(input.into_iter(), 10);
+        assert_eq!(num_pos, 1);
+    }
+
+    #[test]
+    fn example_case_part_two_b() {
+        let input = vec!["R 5", "U 8", "L 8", "D 3", "R 17", "D 10", "L 25", "U 20"];
+        let num_pos = simulate_rope(input.into_iter(), 10);
+        assert_eq!(num_pos, 36);
     }
 }
 
@@ -726,52 +744,86 @@ use std::collections::HashSet;
 use itertools::Itertools;
 
 /// This function assumes that both head (H) and tail (T) start at 0,0
-fn simulate_rope<'a>(input: impl Iterator<Item = &'a str>) -> usize {
+fn simulate_rope<'a>(input: impl Iterator<Item = &'a str>, num_knots: usize) -> usize {
     let mut visited: HashSet<(i32, i32)> = HashSet::new();
-    let num_knots = 2;
     let mut knots = vec![(0, 0); num_knots];
     for motion in input {
         let (direction, steps) = motion.split(" ").collect_tuple().unwrap();
         for _ in 0..steps.parse::<i32>().unwrap() {
-            for knot in 0..num_knots {
-                match direction {
-                    "R" => {
-                        if knot == 0 {
-                            knots[knot] = (knots[knot].0 + 1, knots[knot].1);
-                        } else {
-                            if knots[knot - 1].0 - knots[knot].0 > 1 {
-                                knots[knot] = (knots[knot].0 + 1, knots[knot - 1].1);
-                            }
-                        }
-                    }
-                    "L" => {
-                        if knot == 0 {
-                            knots[knot] = (knots[knot].0 - 1, knots[knot].1);
-                        } else {
-                            if knots[knot].0 - knots[knot - 1].0 > 1 {
-                                knots[knot] = (knots[knot].0 - 1, knots[knot - 1].1);
-                            }
-                        }
-                    }
-                    "U" => {
-                        if knot == 0 {
-                            knots[knot] = (knots[knot].0, knots[knot].1 + 1);
-                        } else {
-                            if knots[knot - 1].1 - knots[knot].1 > 1 {
-                                knots[knot] = (knots[knot - 1].0, knots[knot].1 + 1);
-                            }
-                        }
-                    }
-                    "D" => {
-                        if knot == 0 {
-                            knots[knot] = (knots[knot].0, knots[knot].1 - 1);
-                        } else {
-                            if knots[knot].1 - knots[knot - 1].1 > 1 {
-                                knots[knot] = (knots[knot - 1].0, knots[knot].1 - 1);
-                            }
-                        }
-                    }
-                    _ => panic!("Unexpected direction {direction}"),
+            match direction {
+                "R" => knots[0] = (knots[0].0 + 1, knots[0].1),
+                "L" => knots[0] = (knots[0].0 - 1, knots[0].1),
+                "U" => knots[0] = (knots[0].0, knots[0].1 + 1),
+                "D" => knots[0] = (knots[0].0, knots[0].1 - 1),
+                _ => panic!("Unexpected direction {direction}"),
+            }
+            for knot in 1..num_knots {
+                //   65432
+                //   7...1
+                //   8.X.0
+                //   9...f
+                //   abcde
+                // c
+                if knots[knot].1 - knots[knot - 1].1 > 1 && knots[knot].0 == knots[knot - 1].0 {
+                    knots[knot] = (knots[knot].0, knots[knot].1 - 1);
+                }
+                // 4
+                else if knots[knot - 1].1 - knots[knot].1 > 1
+                    && knots[knot].0 == knots[knot - 1].0
+                {
+                    knots[knot] = (knots[knot].0, knots[knot].1 + 1);
+                }
+                // 0
+                else if knots[knot - 1].0 - knots[knot].0 > 1
+                    && knots[knot].1 == knots[knot - 1].1
+                {
+                    knots[knot] = (knots[knot].0 + 1, knots[knot].1);
+                }
+                // 8
+                else if knots[knot].0 - knots[knot - 1].0 > 1
+                    && knots[knot].1 == knots[knot - 1].1
+                {
+                    knots[knot] = (knots[knot].0 - 1, knots[knot].1);
+                }
+                // 1-3
+                else if (knots[knot - 1].0 - knots[knot].0 == 2
+                    && knots[knot - 1].1 - knots[knot].1 == 1)
+                    || (knots[knot - 1].0 - knots[knot].0 == 1
+                        && knots[knot - 1].1 - knots[knot].1 == 2)
+                    || (knots[knot - 1].0 - knots[knot].0 == 2
+                        && knots[knot - 1].1 - knots[knot].1 == 2)
+                {
+                    knots[knot] = (knots[knot].0 + 1, knots[knot].1 + 1);
+                }
+                // 5-7
+                else if (knots[knot].0 - knots[knot - 1].0 == 2
+                    && knots[knot - 1].1 - knots[knot].1 == 1)
+                    || (knots[knot].0 - knots[knot - 1].0 == 1
+                        && knots[knot - 1].1 - knots[knot].1 == 2)
+                    || (knots[knot].0 - knots[knot - 1].0 == 2
+                        && knots[knot - 1].1 - knots[knot].1 == 2)
+                {
+                    knots[knot] = (knots[knot].0 - 1, knots[knot].1 + 1);
+                }
+                // 9-11
+                else if (knots[knot].0 - knots[knot - 1].0 == 2
+                    && knots[knot].1 - knots[knot - 1].1 == 1)
+                    || (knots[knot].0 - knots[knot - 1].0 == 1
+                        && knots[knot].1 - knots[knot - 1].1 == 2)
+                    || (knots[knot].0 - knots[knot - 1].0 == 2
+                        && knots[knot].1 - knots[knot - 1].1 == 2)
+                {
+                    knots[knot] = (knots[knot].0 - 1, knots[knot].1 - 1);
+                }
+                // 13-15
+                else if (knots[knot - 1].0 - knots[knot].0 == 2
+                    && knots[knot].1 - knots[knot - 1].1 == 1)
+                    || (knots[knot - 1].0 - knots[knot].0 == 1
+                        && knots[knot].1 - knots[knot - 1].1 == 2)
+                    || (knots[knot - 1].0 - knots[knot].0 == 2
+                        && knots[knot].1 - knots[knot - 1].1 == 2)
+                {
+                    knots[knot] = (knots[knot].0 + 1, knots[knot].1 - 1);
                 }
             }
             visited.insert(knots[num_knots - 1]);

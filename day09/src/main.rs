@@ -1,3 +1,6 @@
+use itertools::Itertools;
+use std::collections::HashSet;
+
 /// --- Day 9: Rope Bridge ---
 /// This rope bridge creaks as you walk along it. You aren't sure how old it is,
 /// or whether it can even support your weight.
@@ -715,7 +718,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
 
-    use crate::simulate_rope;
+    use crate::{simulate_rope, Point};
 
     #[test]
     fn example_case_part_one() {
@@ -737,96 +740,91 @@ mod tests {
         let num_pos = simulate_rope(input.into_iter(), 10);
         assert_eq!(num_pos, 36);
     }
+
+    #[test]
+    fn half_distance() {
+        let follow = Point { x: 0, y: 0 };
+        let leader = Point { x: 1, y: 2 };
+        assert_eq!(follow.half_distance(&leader), (1, 1).into());
+        let follow = Point { x: 0, y: 0 };
+        let leader = Point { x: -1, y: 2 };
+        assert_eq!(follow.half_distance(&leader), (-1, 1).into());
+    }
 }
 
-use std::collections::HashSet;
+#[derive(Clone, Eq, Hash, PartialEq, Debug)]
+struct Point {
+    x: i32,
+    y: i32,
+}
 
-use itertools::Itertools;
+impl From<(i32, i32)> for Point {
+    fn from((x, y): (i32, i32)) -> Self {
+        Point { x, y }
+    }
+}
+
+impl Point {
+    fn half_distance(&self, other: &Point) -> Point {
+        if i32::pow(other.x - self.x, 2) + i32::pow(other.y - self.y, 2) > 4 {
+            if other.x - self.x > 0 {
+                if other.y - self.y > 0 {
+                    Point {
+                        x: ((other.x as f32 - self.x as f32) / 2.0).ceil() as i32,
+                        y: ((other.y as f32 - self.y as f32) / 2.0).ceil() as i32,
+                    }
+                } else {
+                    Point {
+                        x: ((other.x as f32 - self.x as f32) / 2.0).ceil() as i32,
+                        y: ((other.y as f32 - self.y as f32) / 2.0).floor() as i32,
+                    }
+                }
+            } else {
+                if other.y - self.y > 0 {
+                    Point {
+                        x: ((other.x as f32 - self.x as f32) / 2.0).floor() as i32,
+                        y: ((other.y as f32 - self.y as f32) / 2.0).ceil() as i32,
+                    }
+                } else {
+                    Point {
+                        x: ((other.x as f32 - self.x as f32) / 2.0).floor() as i32,
+                        y: ((other.y as f32 - self.y as f32) / 2.0).floor() as i32,
+                    }
+                }
+            }
+        } else {
+            Point {
+                x: (other.x - self.x) / 2,
+                y: (other.y - self.y) / 2,
+            }
+        }
+    }
+    fn add(&mut self, other: &Point) {
+        self.x += other.x;
+        self.y += other.y;
+    }
+}
 
 /// This function assumes that both head (H) and tail (T) start at 0,0
 fn simulate_rope<'a>(input: impl Iterator<Item = &'a str>, num_knots: usize) -> usize {
-    let mut visited: HashSet<(i32, i32)> = HashSet::new();
-    let mut knots = vec![(0, 0); num_knots];
+    let mut visited: HashSet<Point> = HashSet::new();
+    let mut knots = vec![Point { x: 0, y: 0 }; num_knots];
     for motion in input {
         let (direction, steps) = motion.split(" ").collect_tuple().unwrap();
         for _ in 0..steps.parse::<i32>().unwrap() {
             match direction {
-                "R" => knots[0] = (knots[0].0 + 1, knots[0].1),
-                "L" => knots[0] = (knots[0].0 - 1, knots[0].1),
-                "U" => knots[0] = (knots[0].0, knots[0].1 + 1),
-                "D" => knots[0] = (knots[0].0, knots[0].1 - 1),
+                "R" => knots[0] = (knots[0].x + 1, knots[0].y).into(),
+                "L" => knots[0] = (knots[0].x - 1, knots[0].y).into(),
+                "U" => knots[0] = (knots[0].x, knots[0].y + 1).into(),
+                "D" => knots[0] = (knots[0].x, knots[0].y - 1).into(),
                 _ => panic!("Unexpected direction {direction}"),
             }
             for knot in 1..num_knots {
-                //   65432
-                //   7...1
-                //   8.X.0
-                //   9...f
-                //   abcde
-                // c
-                if knots[knot].1 - knots[knot - 1].1 > 1 && knots[knot].0 == knots[knot - 1].0 {
-                    knots[knot] = (knots[knot].0, knots[knot].1 - 1);
-                }
-                // 4
-                else if knots[knot - 1].1 - knots[knot].1 > 1
-                    && knots[knot].0 == knots[knot - 1].0
-                {
-                    knots[knot] = (knots[knot].0, knots[knot].1 + 1);
-                }
-                // 0
-                else if knots[knot - 1].0 - knots[knot].0 > 1
-                    && knots[knot].1 == knots[knot - 1].1
-                {
-                    knots[knot] = (knots[knot].0 + 1, knots[knot].1);
-                }
-                // 8
-                else if knots[knot].0 - knots[knot - 1].0 > 1
-                    && knots[knot].1 == knots[knot - 1].1
-                {
-                    knots[knot] = (knots[knot].0 - 1, knots[knot].1);
-                }
-                // 1-3
-                else if (knots[knot - 1].0 - knots[knot].0 == 2
-                    && knots[knot - 1].1 - knots[knot].1 == 1)
-                    || (knots[knot - 1].0 - knots[knot].0 == 1
-                        && knots[knot - 1].1 - knots[knot].1 == 2)
-                    || (knots[knot - 1].0 - knots[knot].0 == 2
-                        && knots[knot - 1].1 - knots[knot].1 == 2)
-                {
-                    knots[knot] = (knots[knot].0 + 1, knots[knot].1 + 1);
-                }
-                // 5-7
-                else if (knots[knot].0 - knots[knot - 1].0 == 2
-                    && knots[knot - 1].1 - knots[knot].1 == 1)
-                    || (knots[knot].0 - knots[knot - 1].0 == 1
-                        && knots[knot - 1].1 - knots[knot].1 == 2)
-                    || (knots[knot].0 - knots[knot - 1].0 == 2
-                        && knots[knot - 1].1 - knots[knot].1 == 2)
-                {
-                    knots[knot] = (knots[knot].0 - 1, knots[knot].1 + 1);
-                }
-                // 9-11
-                else if (knots[knot].0 - knots[knot - 1].0 == 2
-                    && knots[knot].1 - knots[knot - 1].1 == 1)
-                    || (knots[knot].0 - knots[knot - 1].0 == 1
-                        && knots[knot].1 - knots[knot - 1].1 == 2)
-                    || (knots[knot].0 - knots[knot - 1].0 == 2
-                        && knots[knot].1 - knots[knot - 1].1 == 2)
-                {
-                    knots[knot] = (knots[knot].0 - 1, knots[knot].1 - 1);
-                }
-                // 13-15
-                else if (knots[knot - 1].0 - knots[knot].0 == 2
-                    && knots[knot].1 - knots[knot - 1].1 == 1)
-                    || (knots[knot - 1].0 - knots[knot].0 == 1
-                        && knots[knot].1 - knots[knot - 1].1 == 2)
-                    || (knots[knot - 1].0 - knots[knot].0 == 2
-                        && knots[knot].1 - knots[knot - 1].1 == 2)
-                {
-                    knots[knot] = (knots[knot].0 + 1, knots[knot].1 - 1);
-                }
+                let leader = knots[knot - 1].clone();
+                let follow = &mut knots[knot];
+                follow.add(&follow.half_distance(&leader));
             }
-            visited.insert(knots[num_knots - 1]);
+            visited.insert(knots[num_knots - 1].clone());
         }
     }
     visited.len()

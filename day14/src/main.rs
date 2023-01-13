@@ -11,8 +11,9 @@ fn load_initial_scan<'a>(rows: impl Iterator<Item = &'a str>) -> (usize, Vec<Vec
                 .collect_vec()
         })
         .collect_vec();
-    println!("{min_x}..{max_x}");
-    let mut scan: Vec<Vec<u8>> = vec![vec![0; max_x - min_x + 1]; max_y + 1];
+    println!("{min_x}..{max_x}, {max_y}");
+    min_x -= 100;
+    let mut scan: Vec<Vec<u8>> = vec![vec![0; max_x - min_x + 201]; max_y + 1];
     for path in paths {
         for ((x1, y1), (x2, y2)) in path.into_iter().tuple_windows() {
             if x1 == x2 {
@@ -74,7 +75,7 @@ fn print_scan(scan: &[Vec<u8>]) {
     }
 }
 
-fn simulate_sand(scan: &mut Vec<Vec<u8>>, init_x: usize) -> usize {
+fn simulate_sand_part_one(mut scan: Vec<Vec<u8>>, init_x: usize) -> usize {
     let mut rest = true;
     let mut rested = 0;
     while rest {
@@ -94,28 +95,58 @@ fn simulate_sand(scan: &mut Vec<Vec<u8>>, init_x: usize) -> usize {
             } else {
                 rest = true;
                 scan[y][x] = 2;
+                break;
             }
         }
         if rest {
             rested += 1;
         }
     }
+    print_scan(&scan);
+    rested
+}
+
+fn simulate_sand_part_two(mut scan: Vec<Vec<u8>>, init_x: usize) -> usize {
+    scan.push(vec![0; scan[0].len()]);
+    scan.push(vec![1; scan[0].len()]);
+    let mut rested = 0;
+    while scan[0][init_x] == 0 {
+        let mut pos = (init_x, 0);
+        loop {
+            let (x, y) = pos;
+            if y == scan.len() - 1 || x == scan[0].len() - 1 || x == 0 {
+                scan[y][x] = 2;
+                break;
+            }
+            if scan[y + 1][x] == 0 {
+                pos = (x, y + 1);
+            } else if x > 0 && scan[y + 1][x - 1] == 0 {
+                pos = (x - 1, y + 1);
+            } else if x < scan[0].len() - 1 && scan[y + 1][x + 1] == 0 {
+                pos = (x + 1, y + 1);
+            } else {
+                scan[y][x] = 2;
+                break;
+            }
+        }
+        rested += 1;
+    }
+    print_scan(&scan);
     rested
 }
 
 fn main() {
     let input = std::fs::read_to_string("../input/day14.txt").unwrap();
-    let (init_x, mut scan) = load_initial_scan(input.split("\n"));
-    print_scan(&scan);
-    println!("{}, {}", scan[0].len(), scan.len());
-    let rested = simulate_sand(&mut scan, init_x);
-    print_scan(&scan);
+    let (init_x, scan) = load_initial_scan(input.split("\n"));
+    let rested = simulate_sand_part_one(scan.clone(), init_x);
     println!("Part one: rested {rested}");
+    let rested = simulate_sand_part_two(scan, init_x);
+    println!("Part two: rested {rested}");
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{load_initial_scan, simulate_sand};
+    use crate::{load_initial_scan, simulate_sand_part_one, simulate_sand_part_two};
 
     #[test]
     fn example_case_part_one() {
@@ -123,9 +154,19 @@ mod tests {
             "498,4 -> 498,6 -> 496,6",
             "503,4 -> 502,4 -> 502,9 -> 494,9",
         ];
-        let (init_x, mut scan) = load_initial_scan(rows.into_iter());
-        println!("{}, {}", scan[0].len(), scan.len());
-        let rested = simulate_sand(&mut scan, init_x);
+        let (init_x, scan) = load_initial_scan(rows.into_iter());
+        let rested = simulate_sand_part_one(scan, init_x);
         assert_eq!(rested, 24);
+    }
+
+    #[test]
+    fn example_case_part_two() {
+        let rows = [
+            "498,4 -> 498,6 -> 496,6",
+            "503,4 -> 502,4 -> 502,9 -> 494,9",
+        ];
+        let (init_x, scan) = load_initial_scan(rows.into_iter());
+        let rested = simulate_sand_part_two(scan, init_x);
+        assert_eq!(rested, 93);
     }
 }

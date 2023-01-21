@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::sync::mpsc::{self, Receiver, Sender};
 
 /// --- Day 11: Monkey in the Middle ---
 /// As you finally start making your way upriver, you realize your pack is much
@@ -243,18 +243,32 @@ use std::collections::HashMap;
 /// stuff-slinging simian shenanigans?
 
 fn main() {
-    println!("Hello, world!");
+    let input = std::fs::read_to_string("../input/day11.txt").unwrap();
+    let input = input.split("\n");
+    let mut monkeys = read_monkeys(input.clone());
+    let mut inspections: Vec<usize> = monkeys.iter().map(|_| 0).collect();
+    for _ in 0..20 {
+        monkeys = round(monkeys, &mut inspections);
+    }
+    inspections.sort_by(|a, b| b.cmp(&a));
+    println!(
+        "Part one: {}",
+        inspections
+            .iter()
+            .take(2)
+            .fold(1, |state, value| state * value)
+    );
 }
 
 enum Operation {
-    Add(u32),
-    Mul(u32),
+    Add(usize),
+    Mul(usize),
     Square,
     None,
 }
 
 impl Operation {
-    fn apply(&self, other: u32) -> u32 {
+    fn apply(&self, other: usize) -> usize {
         match self {
             Operation::Add(a) => other + a,
             Operation::Mul(m) => other * m,
@@ -265,57 +279,36 @@ impl Operation {
 }
 
 struct Monkey {
-    items: Vec<u32>,
     operation: Operation,
-    test: u32,
+    test: usize,
     if_true: usize,
     if_false: usize,
+    tx: Sender<usize>,
+    rx: Receiver<usize>,
 }
 
 impl Monkey {
     fn new() -> Self {
+        let (tx, rx) = mpsc::channel();
         Self {
-            items: Vec::new(),
             operation: Operation::None,
             test: 0,
             if_true: 0,
             if_false: 0,
+            tx,
+            rx,
         }
     }
 
-    fn from_inspected(
-        items: Vec<u32>,
-        operation: Operation,
-        test: u32,
-        if_true: usize,
-        if_false: usize,
-    ) -> Self {
-        Self {
-            items,
-            operation,
-            test,
-            if_true,
-            if_false,
-        }
-    }
-
-    fn items(&self) -> &Vec<u32> {
-        &self.items
-    }
-
-    fn receive(&mut self, items: Vec<u32>) {
-        self.items.extend(items)
-    }
-
-    fn starting_items(&mut self, items: Vec<u32>) {
-        self.items = items;
+    fn catch(&self, item: usize) {
+        self.tx.send(item).unwrap();
     }
 
     fn operation(&mut self, op: Operation) {
         self.operation = op;
     }
 
-    fn test(&mut self, div: u32) {
+    fn test(&mut self, div: usize) {
         self.test = div;
     }
 
@@ -327,38 +320,15 @@ impl Monkey {
         self.if_false = to;
     }
 
-    fn inspect_and_throw(
-        self,
-        idx: &usize,
-        recv: Option<Vec<u32>>,
-    ) -> (Self, HashMap<usize, Vec<u32>>) {
-        let mut passes: HashMap<usize, Vec<u32>> = HashMap::new();
-        for item in self
-            .items
-            .into_iter()
-            .chain(recv.into_iter().flat_map(|v| v.into_iter()))
-        {
+    fn inspect_next_item(&self) -> Option<(usize, usize)> {
+        self.rx.try_recv().ok().map(|item| {
             let new_item = self.operation.apply(item) / 3;
             if new_item % self.test == 0 {
-                let mut old = passes.remove(&self.if_true).unwrap_or_default();
-                old.push(new_item);
-                passes.insert(self.if_true, old);
+                (self.if_true, new_item)
             } else {
-                let mut old = passes.remove(&self.if_false).unwrap_or_default();
-                old.push(new_item);
-                passes.insert(self.if_false, old);
+                (self.if_false, new_item)
             }
-        }
-        (
-            Monkey::from_inspected(
-                passes.remove(idx).unwrap_or_default(),
-                self.operation,
-                self.test,
-                self.if_true,
-                self.if_false,
-            ),
-            passes,
-        )
+        })
     }
 }
 
@@ -368,14 +338,16 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
         if line.starts_with("Monkey") {
             monkeys.push(Monkey::new());
         } else if line.starts_with("  Starting items") {
-            let items = line
+            let items: Vec<_> = line
                 .split(": ")
                 .nth(1)
                 .unwrap()
                 .split(", ")
-                .map(|i| i.parse::<u32>().unwrap())
+                .map(|i| i.parse::<usize>().unwrap())
                 .collect();
-            monkeys.last_mut().unwrap().starting_items(items);
+            for item in &items {
+                monkeys.last().unwrap().catch(*item);
+            }
         } else if line.starts_with("  Operation:") {
             if line.contains("old * old") {
                 monkeys.last_mut().unwrap().operation(Operation::Square);
@@ -383,7 +355,7 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
                 let factor = line
                     .split("old * ")
                     .nth(1)
-                    .map(|f| f.parse::<u32>().unwrap())
+                    .map(|f| f.parse::<usize>().unwrap())
                     .unwrap();
                 monkeys
                     .last_mut()
@@ -393,7 +365,7 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
                 let add = line
                     .split("old + ")
                     .nth(1)
-                    .map(|f| f.parse::<u32>().unwrap())
+                    .map(|f| f.parse::<usize>().unwrap())
                     .unwrap();
                 monkeys.last_mut().unwrap().operation(Operation::Add(add));
             }
@@ -401,7 +373,7 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
             let div = line
                 .split("divisible by ")
                 .nth(1)
-                .map(|d| d.parse::<u32>().unwrap())
+                .map(|d| d.parse::<usize>().unwrap())
                 .unwrap();
             monkeys.last_mut().unwrap().test(div);
         } else if line.starts_with("    If true:") {
@@ -423,18 +395,18 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
     monkeys
 }
 
-fn round(monkeys: Vec<Monkey>) -> Vec<Monkey> {
-    let mut new_monkeys = Vec::new();
-    let mut passes = HashMap::new();
-    for (idx, monkey) in monkeys.into_iter().enumerate() {
-        let (new_monkey, hm) = monkey.inspect_and_throw(&idx, passes.remove(&idx));
-        new_monkeys.push(new_monkey);
-        passes.extend(hm.into_iter());
+/// The monkeys take turns inspecting and through their items.
+/// A monkey can throw items to other monkeys.
+/// The monkeys form a fully connected graph.
+/// Every monkey must, in every other monkey's turn, be able to receive items
+fn round(monkeys: Vec<Monkey>, inspections: &mut Vec<usize>) -> Vec<Monkey> {
+    for (idx, monkey) in monkeys.iter().enumerate() {
+        while let Some((receiver, item)) = monkey.inspect_next_item() {
+            inspections[idx] += 1;
+            monkeys[receiver].catch(item);
+        }
     }
-    for (idx, monkey) in new_monkeys.iter_mut().enumerate() {
-        monkey.receive(passes.remove(&idx).unwrap_or_default());
-    }
-    new_monkeys
+    monkeys
 }
 
 #[cfg(test)]
@@ -472,12 +444,13 @@ Monkey 3:
     If true: throw to monkey 0
     If false: throw to monkey 1"#;
         let monkeys = read_monkeys(input.split("\n"));
+        let mut inspections: Vec<usize> = monkeys.iter().map(|_| 0).collect();
         assert_eq!(monkeys.len(), 4);
 
-        let monkeys = round(monkeys);
-        assert_eq!(monkeys[0].items(), &vec![20, 23, 27, 26]);
-        assert_eq!(monkeys[1].items(), &vec![2080, 25, 167, 207, 401, 1046]);
-        assert_eq!(monkeys[2].items(), &vec![]);
-        assert_eq!(monkeys[3].items(), &vec![]);
+        let monkeys = round(monkeys, &mut inspections);
+        assert_eq!(inspections[0], 2);
+        assert_eq!(inspections[1], 4);
+        assert_eq!(inspections[2], 3);
+        assert_eq!(inspections[3], 5);
     }
 }

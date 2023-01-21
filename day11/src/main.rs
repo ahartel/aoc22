@@ -246,14 +246,14 @@ fn main() {
     let input = std::fs::read_to_string("../input/day11.txt").unwrap();
     let input = input.split("\n");
     let mut monkeys = read_monkeys(input.clone());
-    let mut inspections: Vec<usize> = monkeys.iter().map(|_| 0).collect();
+    let mut observer: Vec<usize> = monkeys.iter().map(|_| 0).collect();
     for _ in 0..20 {
-        monkeys = round(monkeys, &mut inspections);
+        monkeys = round(monkeys, &mut observer);
     }
-    inspections.sort_by(|a, b| b.cmp(&a));
+    observer.sort_by(|a, b| b.cmp(&a));
     println!(
         "Part one: {}",
-        inspections
+        observer
             .iter()
             .take(2)
             .fold(1, |state, value| state * value)
@@ -399,10 +399,10 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
 /// A monkey can throw items to other monkeys.
 /// The monkeys form a fully connected graph.
 /// Every monkey must, in every other monkey's turn, be able to receive items
-fn round(monkeys: Vec<Monkey>, inspections: &mut Vec<usize>) -> Vec<Monkey> {
+fn round(monkeys: Vec<Monkey>, observer: &mut Vec<usize>) -> Vec<Monkey> {
     for (idx, monkey) in monkeys.iter().enumerate() {
         while let Some((receiver, item)) = monkey.inspect_next_item() {
-            inspections[idx] += 1;
+            observer[idx] += 1;
             monkeys[receiver].catch(item);
         }
     }
@@ -447,10 +447,56 @@ Monkey 3:
         let mut inspections: Vec<usize> = monkeys.iter().map(|_| 0).collect();
         assert_eq!(monkeys.len(), 4);
 
-        let monkeys = round(monkeys, &mut inspections);
+        let _monkeys = round(monkeys, &mut inspections);
         assert_eq!(inspections[0], 2);
         assert_eq!(inspections[1], 4);
         assert_eq!(inspections[2], 3);
         assert_eq!(inspections[3], 5);
+    }
+
+    #[test]
+    fn part_two() {
+        let input = r#"
+Monkey 0:
+  Starting items: 79, 98
+  Operation: new = old * 19
+  Test: divisible by 23
+    If true: throw to monkey 2
+    If false: throw to monkey 3
+
+Monkey 1:
+  Starting items: 54, 65, 75, 74
+  Operation: new = old + 6
+  Test: divisible by 19
+    If true: throw to monkey 2
+    If false: throw to monkey 0
+
+Monkey 2:
+  Starting items: 79, 60, 97
+  Operation: new = old * old
+  Test: divisible by 13
+    If true: throw to monkey 1
+    If false: throw to monkey 3
+
+Monkey 3:
+  Starting items: 74
+  Operation: new = old + 3
+  Test: divisible by 17
+    If true: throw to monkey 0
+    If false: throw to monkey 1"#;
+        let mut monkeys = read_monkeys(input.split("\n"));
+        let mut observer: Vec<usize> = monkeys.iter().map(|_| 0).collect();
+
+        monkeys = round(monkeys, &mut observer);
+        for monkey in &observer {
+            println!("{monkey}");
+        }
+
+        for _ in 0..19 {
+            monkeys = round(monkeys, &mut observer);
+        }
+        for monkey in &observer {
+            println!("{monkey}");
+        }
     }
 }

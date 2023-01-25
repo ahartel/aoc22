@@ -244,22 +244,29 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 fn main() {
     let input = std::fs::read_to_string("../input/day11.txt").unwrap();
-    let input = input.split("\n");
-    let mut monkeys = read_monkeys(input.clone());
-    let mut observer: Vec<usize> = monkeys.iter().map(|_| 0).collect();
-    for _ in 0..20 {
-        monkeys = round(monkeys, &mut observer);
+    let input = input.split('\n');
+    {
+        let mut monkeys = read_monkeys(input.clone());
+        let mut observer: Vec<usize> = monkeys.iter().map(|_| 0).collect();
+        for _ in 0..20 {
+            monkeys = round_part_one(monkeys, &mut observer, 3);
+        }
+        observer.sort_by(|a, b| b.cmp(a));
+        println!("Part one: {}", observer.iter().take(2).product::<usize>());
     }
-    observer.sort_by(|a, b| b.cmp(&a));
-    println!(
-        "Part one: {}",
-        observer
-            .iter()
-            .take(2)
-            .fold(1, |state, value| state * value)
-    );
+    {
+        let mut monkeys = read_monkeys(input.clone());
+        let test_product = monkeys.iter().map(|m| m.test).product();
+        let mut observer: Vec<usize> = monkeys.iter().map(|_| 0).collect();
+        for _ in 0..10000 {
+            monkeys = round_part_two(monkeys, &mut observer, test_product);
+        }
+        observer.sort_by(|a, b| b.cmp(a));
+        println!("Part two: {}", observer.iter().take(2).product::<usize>());
+    }
 }
 
+#[derive(Debug, Clone)]
 enum Operation {
     Add(usize),
     Mul(usize),
@@ -278,6 +285,7 @@ impl Operation {
     }
 }
 
+#[derive(Debug)]
 struct Monkey {
     operation: Operation,
     test: usize,
@@ -288,13 +296,13 @@ struct Monkey {
 }
 
 impl Monkey {
-    fn new() -> Self {
+    fn new(operation: Operation, test: usize, if_true: usize, if_false: usize) -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
-            operation: Operation::None,
-            test: 0,
-            if_true: 0,
-            if_false: 0,
+            operation,
+            test,
+            if_true,
+            if_false,
             tx,
             rx,
         }
@@ -304,25 +312,20 @@ impl Monkey {
         self.tx.send(item).unwrap();
     }
 
-    fn operation(&mut self, op: Operation) {
-        self.operation = op;
-    }
-
-    fn test(&mut self, div: usize) {
-        self.test = div;
-    }
-
-    fn if_true(&mut self, to: usize) {
-        self.if_true = to;
-    }
-
-    fn if_false(&mut self, to: usize) {
-        self.if_false = to;
-    }
-
-    fn inspect_next_item(&self) -> Option<(usize, usize)> {
+    fn inspect_next_item_divide(&self, normalizer: usize) -> Option<(usize, usize)> {
         self.rx.try_recv().ok().map(|item| {
-            let new_item = self.operation.apply(item) / 3;
+            let new_item = self.operation.apply(item) / normalizer;
+            if new_item % self.test == 0 {
+                (self.if_true, new_item)
+            } else {
+                (self.if_false, new_item)
+            }
+        })
+    }
+
+    fn inspect_next_item_modulo(&self, normalizer: usize) -> Option<(usize, usize)> {
+        self.rx.try_recv().ok().map(|item| {
+            let new_item = self.operation.apply(item) % normalizer;
             if new_item % self.test == 0 {
                 (self.if_true, new_item)
             } else {
@@ -334,9 +337,18 @@ impl Monkey {
 
 fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
     let mut monkeys = Vec::new();
+    let mut starting_items = Vec::new();
+    let mut operation = Operation::None;
+    let mut test = 0;
+    let mut if_true = 0;
+    let mut if_false = 0;
     for line in lines {
-        if line.starts_with("Monkey") {
-            monkeys.push(Monkey::new());
+        if line == "" {
+            let monkey = Monkey::new(operation.clone(), test, if_true, if_false);
+            for item in &starting_items {
+                monkey.catch(*item);
+            }
+            monkeys.push(monkey);
         } else if line.starts_with("  Starting items") {
             let items: Vec<_> = line
                 .split(": ")
@@ -345,29 +357,24 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
                 .split(", ")
                 .map(|i| i.parse::<usize>().unwrap())
                 .collect();
-            for item in &items {
-                monkeys.last().unwrap().catch(*item);
-            }
+            starting_items = items;
         } else if line.starts_with("  Operation:") {
             if line.contains("old * old") {
-                monkeys.last_mut().unwrap().operation(Operation::Square);
+                operation = Operation::Square;
             } else if line.contains("old *") {
                 let factor = line
                     .split("old * ")
                     .nth(1)
                     .map(|f| f.parse::<usize>().unwrap())
                     .unwrap();
-                monkeys
-                    .last_mut()
-                    .unwrap()
-                    .operation(Operation::Mul(factor));
+                operation = Operation::Mul(factor);
             } else {
                 let add = line
                     .split("old + ")
                     .nth(1)
                     .map(|f| f.parse::<usize>().unwrap())
                     .unwrap();
-                monkeys.last_mut().unwrap().operation(Operation::Add(add));
+                operation = Operation::Add(add);
             }
         } else if line.starts_with("  Test:") {
             let div = line
@@ -375,21 +382,21 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
                 .nth(1)
                 .map(|d| d.parse::<usize>().unwrap())
                 .unwrap();
-            monkeys.last_mut().unwrap().test(div);
+            test = div;
         } else if line.starts_with("    If true:") {
             let to = line
                 .split("to monkey ")
                 .nth(1)
                 .map(|d| d.parse::<usize>().unwrap())
                 .unwrap();
-            monkeys.last_mut().unwrap().if_true(to);
+            if_true = to;
         } else if line.starts_with("    If false:") {
             let to = line
                 .split("to monkey ")
                 .nth(1)
                 .map(|d| d.parse::<usize>().unwrap())
                 .unwrap();
-            monkeys.last_mut().unwrap().if_false(to);
+            if_false = to;
         }
     }
     monkeys
@@ -399,9 +406,19 @@ fn read_monkeys<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Monkey> {
 /// A monkey can throw items to other monkeys.
 /// The monkeys form a fully connected graph.
 /// Every monkey must, in every other monkey's turn, be able to receive items
-fn round(monkeys: Vec<Monkey>, observer: &mut Vec<usize>) -> Vec<Monkey> {
+fn round_part_two(monkeys: Vec<Monkey>, observer: &mut [usize], normalizer: usize) -> Vec<Monkey> {
     for (idx, monkey) in monkeys.iter().enumerate() {
-        while let Some((receiver, item)) = monkey.inspect_next_item() {
+        while let Some((receiver, item)) = monkey.inspect_next_item_modulo(normalizer) {
+            observer[idx] += 1;
+            monkeys[receiver].catch(item);
+        }
+    }
+    monkeys
+}
+
+fn round_part_one(monkeys: Vec<Monkey>, observer: &mut [usize], normalizer: usize) -> Vec<Monkey> {
+    for (idx, monkey) in monkeys.iter().enumerate() {
+        while let Some((receiver, item)) = monkey.inspect_next_item_divide(normalizer) {
             observer[idx] += 1;
             monkeys[receiver].catch(item);
         }
@@ -411,12 +428,12 @@ fn round(monkeys: Vec<Monkey>, observer: &mut Vec<usize>) -> Vec<Monkey> {
 
 #[cfg(test)]
 mod test {
-    use crate::{read_monkeys, round};
+
+    use crate::{read_monkeys, round_part_one, round_part_two};
 
     #[test]
     fn first_test() {
-        let input = r#"
-Monkey 0:
+        let input = r#"Monkey 0:
   Starting items: 79, 98
   Operation: new = old * 19
   Test: divisible by 23
@@ -442,12 +459,16 @@ Monkey 3:
   Operation: new = old + 3
   Test: divisible by 17
     If true: throw to monkey 0
-    If false: throw to monkey 1"#;
-        let monkeys = read_monkeys(input.split("\n"));
+    If false: throw to monkey 1
+"#;
+        let monkeys = read_monkeys(input.split('\n'));
+        for monkey in &monkeys {
+            println!("{monkey:?}");
+        }
         let mut inspections: Vec<usize> = monkeys.iter().map(|_| 0).collect();
         assert_eq!(monkeys.len(), 4);
 
-        let _monkeys = round(monkeys, &mut inspections);
+        let _monkeys = round_part_one(monkeys, &mut inspections, 3);
         assert_eq!(inspections[0], 2);
         assert_eq!(inspections[1], 4);
         assert_eq!(inspections[2], 3);
@@ -456,8 +477,7 @@ Monkey 3:
 
     #[test]
     fn part_two() {
-        let input = r#"
-Monkey 0:
+        let input = r#"Monkey 0:
   Starting items: 79, 98
   Operation: new = old * 19
   Test: divisible by 23
@@ -483,20 +503,18 @@ Monkey 3:
   Operation: new = old + 3
   Test: divisible by 17
     If true: throw to monkey 0
-    If false: throw to monkey 1"#;
-        let mut monkeys = read_monkeys(input.split("\n"));
+    If false: throw to monkey 1
+"#;
+        let mut monkeys = read_monkeys(input.split('\n'));
+        let test_product: usize = monkeys.iter().map(|m| m.test).product();
         let mut observer: Vec<usize> = monkeys.iter().map(|_| 0).collect();
 
-        monkeys = round(monkeys, &mut observer);
-        for monkey in &observer {
-            println!("{monkey}");
+        for _ in 1..=20 {
+            monkeys = round_part_two(monkeys, &mut observer, test_product);
         }
-
-        for _ in 0..19 {
-            monkeys = round(monkeys, &mut observer);
-        }
-        for monkey in &observer {
-            println!("{monkey}");
-        }
+        assert_eq!(observer[0], 99);
+        assert_eq!(observer[1], 97);
+        assert_eq!(observer[2], 8);
+        assert_eq!(observer[3], 103);
     }
 }
